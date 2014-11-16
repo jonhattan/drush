@@ -33,7 +33,16 @@ class ReleaseInfo {
       'cache-duration' => drush_get_option('cache-duration-releasexml', 24*3600),
     );
     $this->engine_config = $config;
+
+    // We need a static cache for ReleaseInfo::get() since this method
+    // may be called several times during a request.
     $this->cache = array();
+
+    // Use also a drush cache to store \Drush\UpdateService\Project
+    // instances, because they're expensive to build.
+    // We need to use FileCache backend for this cache, since the default
+    // JSONCache backend is unable to store serialized php objects.
+    drush_set_option('cache-class-release-info', '\Drush\Cache\FileCache');
   }
 
   /**
@@ -55,18 +64,40 @@ class ReleaseInfo {
    * @return \Drush\UpdateService\Project
    */
   public function get($request, $refresh = FALSE) {
-    if ($refresh || !isset($this->cache[$request['name']])) {
-      $project_release_info = Project::getInstance($request, $this->getCacheDuration());
-      if ($project_release_info && !$project_release_info->isValid()) {
-        $project_release_info = FALSE;
+    if ($refresh) {
+      $this->clearCached($request);
+    }
+
+    if (!isset($this->cache[$request['name']])) {
+      $cid = self::getCacheId($request);
+      $cached = drush_cache_get($cid, 'release-info');
+      if ($cached && ($cached->expire > time())) {
+        $project_release_info = $cached->data;
+      }
+      else {
+        $project_release_info = Project::getInstance($request, $this->getCacheDuration());
+        if ($project_release_info && !$project_release_info->isValid()) {
+          $project_release_info = FALSE;
+        }
+        else {
+          drush_cache_set($cid, $project_release_info, 'release-info', time() + $this->getCacheDuration());
+        }
       }
       $this->cache[$request['name']] = $project_release_info;
     }
-    return $this->cache[$request['name']];
+    $project_release_info = $this->cache[$request['name']];
+    return $project_release_info;
   }
 
   /**
-   * Delete cached update service file of a project.
+   * Generates the cache id for a request.
+   */
+  private static function getCacheId(array $request) {
+    return "${request['drupal_version']}-${request['name']}";
+  }
+
+  /**
+   * Delete all caches for a project.
    *
    * @param array $request
    *   A request array.
@@ -75,11 +106,32 @@ class ReleaseInfo {
     if (isset($this->cache[$request['name']])) {
       unset($this->cache[$request['name']]);
     }
+
+    $cid = self::getCacheId($request);
+    drush_cache_clear_all($cid, 'release-info');
+
     $url = Project::buildFetchUrl($request);
     $cache_file = drush_download_file_name($url);
     if (file_exists($cache_file)) {
       unlink($cache_file);
     }
+  }
+
+  /**
+   * Returns the time of the older stored cache entry for the given projects.
+   */
+  function olderCacheEntry(array $requests) {
+    $older = 0;
+
+    // Iterate all requests and get the time of the older release info.
+    foreach ($requests as $request) {
+      $cid = self::getCacheId($request);
+      $data = drush_cache_get($cid, 'release-info');
+      if ($data) {
+        $older = (!$older) ? $data->created : min($data->created, $older);
+      }
+    }
+    return $older;
   }
 
   /**
