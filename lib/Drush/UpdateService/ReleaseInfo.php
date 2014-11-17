@@ -111,10 +111,7 @@ class ReleaseInfo {
     drush_cache_clear_all($cid, 'release-info');
 
     $url = Project::buildFetchUrl($request);
-    $cache_file = drush_download_file_name($url);
-    if (file_exists($cache_file)) {
-      unlink($cache_file);
-    }
+    \Drush\Fetcher\FetcherBase::deleteCachedDownload($url);
   }
 
   /**

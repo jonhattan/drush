@@ -6,30 +6,6 @@
  */
 
 /**
- * Validate this package handler can run.
- */
-function package_handler_validate() {
-  // Check wget or curl command exists. Disable possible output.
-  $debug = drush_get_context('DRUSH_DEBUG');
-  drush_set_context('DRUSH_DEBUG', FALSE);
-  $success = drush_shell_exec('wget --version');
-  if (!$success) {
-    $success = drush_shell_exec('curl --version');
-    // Old version of curl shipped in darwin returns error status for --version
-    // and --help. Give the chance to use it.
-    if (!$success) {
-      $success = drush_shell_exec('which curl');
-    }
-  }
-  drush_set_context('DRUSH_DEBUG', $debug);
-  if (!$success) {
-    return drush_set_error('DRUSH_SHELL_COMMAND_NOT_FOUND', dt('wget nor curl executables found.'));
-  }
-
-  return TRUE;
-}
-
-/**
  * Download a project.
  *
  * @param $request Array with information on the request to download.
@@ -55,7 +31,7 @@ function package_handler_download_project(&$request, $release) {
   // See http://drupal.org/node/1782444
   $filename = str_replace('?', '_', basename($release['download_link']));
   $cache_duration = 86400*365;
-  $path = drush_download_file($release['download_link'], $request['base_project_path'] . DIRECTORY_SEPARATOR . $filename, $cache_duration);
+  $path = drush_download_file($release['download_link'], $request['base_project_path'] . '/' . $filename, $cache_duration);
   if ($path || drush_get_context('DRUSH_SIMULATE')) {
     drush_log("Downloading " . $filename . " was successful.");
   }
@@ -67,7 +43,7 @@ function package_handler_download_project(&$request, $release) {
   if (drush_op('md5_file', $path) != $release['mdhash'] && !drush_get_context('DRUSH_SIMULATE')) {
     drush_set_error('DRUSH_PM_FILE_CORRUPT', "File $filename is corrupt (wrong md5 checksum).");
     drush_delete_dir($path, TRUE);
-    drush_delete_dir(drush_download_file_name($release['download_link']), TRUE);
+    \Drush\Fetcher\FetcherBase::deleteCachedDownload($release['download_link']);
     return FALSE;
   }
   else {

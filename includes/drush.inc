@@ -31,12 +31,6 @@ define('DRUSH_APPLICATION_ERROR', 255);
 define('DRUSH_KILOBYTE', 1024);
 
 /**
- * Default amount of time, in seconds, to cache downloads via
- * drush_download_file(). One day is 86400 seconds.
- */
-define('DRUSH_CACHE_LIFETIME_DEFAULT', 86400);
-
-/**
  * Include a file, selecting a version specific file if available.
  *
  * For example, if you pass the path "/var/drush" and the name
@@ -707,77 +701,16 @@ function drush_call_user_func_array($function, $args = array() ) {
 
 /**
  * Download a file using wget, curl or file_get_contents, or via download cache.
- *
- * @param string $url
- *   The url of the file to download.
- * @param string $destination
- *   The name of the file to be saved, which may include the full path.
- *   Optional, if omitted the filename will be extracted from the url and the
- *   file downloaded to the current working directory (Drupal root if
- *   bootstrapped).
- * @param integer $cache_duration
- *   The acceptable age of a cached file. If cached file is too old, a fetch
- *   will occur and cache will be updated. Optional, if ommitted the file will
- *   be fetched directly.
- *
- * @return string
- *   The path to the downloaded file, or FALSE if the file could not be
- *   downloaded.
  */
 function drush_download_file($url, $destination = FALSE, $cache_duration = 0) {
-  // Generate destination if omitted.
-  if (!$destination) {
-    $file = basename(current(explode('?', $url, 2)));
-    $destination = getcwd() . '/' . basename($file);
+  // If the running command declares dependency on fetcher engine,
+  // we already have it instantiated with the desired user options.
+  // Otherwise, we need to instantiate it.
+  $fetcher = drush_get_engine('fetcher');
+  if (!$fetcher) {
+    $fetcher = drush_load_engine('fetcher', 'wget');
   }
-
-  // Simply copy local files to the destination
-  if (!_drush_is_url($url)) {
-    return copy($url, $destination) ? $destination : FALSE;
-  }
-
-  if (drush_get_option('cache') && $cache_duration !== 0 && $cache_file = drush_download_file_name($url)) {
-    // Check for cached, unexpired file.
-    if (file_exists($cache_file) && filectime($cache_file) > ($_SERVER['REQUEST_TIME']-$cache_duration)) {
-      drush_log(dt('!name retrieved from cache.', array('!name' => $cache_file)));
-    }
-    else {
-      if (_drush_download_file($url, $cache_file, TRUE)) {
-        // Cache was set just by downloading file to right location.
-      }
-      elseif (file_exists($cache_file)) {
-        drush_log(dt('!name retrieved from an expired cache since refresh failed.', array('!name' => $cache_file)), 'warning');
-      }
-      else {
-        $cache_file = FALSE;
-      }
-    }
-
-    if ($cache_file && copy($cache_file, $destination)) {
-      // Copy cached file to the destination
-      return $destination;
-    }
-  }
-  elseif ($return = _drush_download_file($url, $destination)) {
-    drush_register_file_for_deletion($return);
-    return $return;
-  }
-
-  // Unable to retrieve from cache nor download.
-  return FALSE;
-}
-
-/**
- * Helper function to determine name of cached file.
- */
-function drush_download_file_name($url) {
-  if ($cache_dir = drush_directory_cache('download')) {
-    $cache_name = str_replace(array(':', '/', '?', '='), '-', $url);
-    return $cache_dir . "/" . $cache_name;
-  }
-  else {
-    return FALSE;
-  }
+  return $fetcher->fetch($url, $destination, $cache_duration);
 }
 
 /**
@@ -788,46 +721,6 @@ function drush_download_file_name($url) {
  */
 function _drush_is_url($url) {
   return parse_url($url, PHP_URL_SCHEME) !== NULL;
-}
-
-/**
- * Download a file using wget, curl or file_get_contents. Does not use download
- * cache.
- *
- * @param string $url
- *   The url of the file to download.
- * @param string $destination
- *   The name of the file to be saved, which may include the full path.
- * @param boolean $overwrite
- *   Overwrite any file thats already at the destination.
- * @return string
- *   The path to the downloaded file, or FALSE if the file could not be
- *   downloaded.
- */
-function _drush_download_file($url, $destination, $overwrite = TRUE) {
-  static $use_wget;
-  if ($use_wget === NULL) {
-    $use_wget = drush_shell_exec('wget --version');
-  }
-
-  $destination_tmp = drush_tempnam('download_file');
-  if ($use_wget) {
-    drush_shell_exec("wget -q --timeout=30 -O %s %s", $destination_tmp, $url);
-  }
-  else {
-    // Force TLS1+ as per https://github.com/drush-ops/drush/issues/894.
-    drush_shell_exec("curl --tlsv1 --fail -s -L --connect-timeout 30 -o %s %s", $destination_tmp, $url);
-  }
-  if (!drush_file_not_empty($destination_tmp) && $file = @file_get_contents($url)) {
-    @file_put_contents($destination_tmp, $file);
-  }
-  if (!drush_file_not_empty($destination_tmp)) {
-    // Download failed.
-    return FALSE;
-  }
-
-  drush_move_dir($destination_tmp, $destination, $overwrite);
-  return $destination;
 }
 
 /**

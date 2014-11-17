@@ -303,6 +303,7 @@ function pm_drush_command() {
     ) + $update_options,
     'sub-options' => $update_suboptions,
     'engines' => array(
+      'fetcher',
       'update_status',
     ),
     'outputformat' => array(
@@ -338,6 +339,7 @@ function pm_drush_command() {
       'release_info' => array(
         'add-options-to-command' => FALSE,
       ),
+      'fetcher',
       'update_status',
     ),
   );
@@ -367,6 +369,7 @@ function pm_drush_command() {
     'aliases' => array('rln'),
     'bootstrap' => DRUSH_BOOTSTRAP_MAX,
     'engines' => array(
+      'fetcher',
       'release_info',
     ),
   );
@@ -392,6 +395,7 @@ function pm_drush_command() {
       'output-data-type' => 'format-table',
     ),
     'engines' => array(
+      'fetcher',
       'release_info',
     ),
   );
@@ -434,6 +438,7 @@ function pm_drush_command() {
     'bootstrap' => DRUSH_BOOTSTRAP_MAX,
     'aliases' => array('dl'),
     'engines' => array(
+      'fetcher',
       'version_control',
       'package_handler',
       'release_info',
@@ -1629,13 +1634,19 @@ function pm_parse_request($request_string) {
  */
 function pm_drush_engine_type_info() {
   return array(
+    'fetcher' => array(
+      'option' => 'fetcher-command',
+      'description' => 'Alternative download implementations.',
+      'options' => array(
+        'fetcher-command' => 'Command to perform downloads.',
+        'cache' => 'Cache fetched data: release XML, tarballs or git clones. Git clones use git\'s --reference option.',
+      ),
+      'combine-help' => TRUE,
+    ),
     'package_handler' => array(
       'option' => 'package-handler',
       'description' => 'Determine how to fetch projects from update service.',
       'default' => 'wget',
-      'options' => array(
-        'cache' => 'Cache release XML and tarballs or git clones. Git clones use git\'s --reference option.',
-      ),
     ),
     'release_info' => array(
       'add-options-to-command' => TRUE,
@@ -1656,6 +1667,20 @@ function pm_drush_engine_type_info() {
       'option' => 'version-control',
       'default' => 'backup',
       'description' => 'Integrate with version control systems.',
+    ),
+  );
+}
+
+/**
+ * Implements hook_drush_engine_ENGINE_TYPE().
+ */
+function pm_drush_engine_fetcher() {
+  return array(
+    'wget' => array(
+      'description' => 'Use wget command.',
+    ),
+    'curl' => array(
+      'description' => 'Use curl command.',
     ),
   );
 }
